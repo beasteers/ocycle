@@ -54,8 +54,11 @@ class BufferEmit(BuffReCycle):
             self.pool = Pool(max_workers=npool)
 
         # optional, stochastic silence sampler
-        self.sampler = sampler
-        self.t0 = self.pause_until = time.time()
+        self.sampler = (
+            sampler if callable(sampler) else
+            (lambda: sampler) if sampler else 0)
+
+        self.t0 = self.pause_until = 0 # is set on the first write
         super().__init__(*a, **kw)
 
     def __repr__(self):
@@ -97,19 +100,36 @@ class BufferEmit(BuffReCycle):
         if self.on_done:
             self.on_done(res)
 
+    @property
+    def full(self):
+        '''Has the buffer exceeded the specified size?'''
+        return int(self.tell()) >= self.size
+
+    @property
+    def is_pausing(self):
+        '''Are we currently pausing data collection for data sparsity?'''
+        return time.time() < self.pause_until
+
     def write(self, data, t0=None):
+        '''Write a frame to the data buffer. Optionally, specify a timestamp for the frame.
+        Otherwise, it will use the current timestamp.
+
+        Arguments:
+            data (bytes): the data buffer
+            t0 (float): the timestamp associated with the frame. Defaults to time.time().
+        '''
         t0 = t0 or time.time()
         if t0 < self.pause_until:
             return
 
+        self.t0 = self.t0 or t0 # sets t0 on the first write
         self.current.write(data)
-        if int(self.tell()) >= self.size:
+        while self.full: # leftover is cleared if sampler is truthy so, no double buffers when sampling
             self.__call()
 
             self.t0 = t0
-            self.pause_until = t0 + (
-                self.sampler() if callable(self.sampler)
-                else self.sampler or 0)
+            self.pause_until = t0 + self.sampler() if self.sampler else 0
 
-    def truncate(self):
-        return truncate_io(self.current, self.size)
+    def truncate(self, size=None):
+        '''Truncate the current buffer to the specified size. Returns the overhang.'''
+        return truncate_io(self.current, size or self.size)
