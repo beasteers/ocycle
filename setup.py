@@ -1,7 +1,7 @@
 import setuptools
 
 setuptools.setup(name='ocycle',
-                 version='0.0.2',
+                 version='0.0.3',
                  description='Stream buffering and event triggering for unbalanced frame sizes.',
                  long_description=open('README.md').read().strip(),
                  long_description_content_type='text/markdown',

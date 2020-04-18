@@ -1,5 +1,5 @@
 import time
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, Future
 from .base import BuffReCycle
 from .util import truncate_io
 
@@ -12,12 +12,12 @@ class BufferEmit(BuffReCycle):
     is of a certian size.
 
     Here's the basics of how it works:
-    >>> import recycle
+    >>> import ocycle
     >>> def test(x, t0):
     ...:     print('func', x, len(x), t0)
     ...:     time.sleep(2)
     ...:     print(t0, 'done')
-    >>> cycle = recycle.BufferEmit(test, 10)
+    >>> cycle = ocycle.BufferEmit(test, 10)
     >>> while True:
     ...:     b.write(b'asdfq ')
     ...:     time.sleep(1)
@@ -39,7 +39,8 @@ class BufferEmit(BuffReCycle):
         npool (int): The max workers in the process/thread pool.
 
     '''
-    pool = None
+    pool = mode = None
+    t0 = pause_until = 0 # is set on the first write
     def __init__(self, callback, size, *a, value=False, clip=False, sampler=None,
                  mode=SERIAL, npool=10, on_done=None, **kw):
         self.callback = callback
@@ -47,24 +48,39 @@ class BufferEmit(BuffReCycle):
         self.size = size
         self.send_value = value
         self.clip_value = clip
-        # whether to use a process or a thread
-        self.mode = mode
-        if mode != SERIAL:
-            Pool = ProcessPoolExecutor if mode == PROCESS else ThreadPoolExecutor
-            self.pool = Pool(max_workers=npool)
-
         # optional, stochastic silence sampler
         self.sampler = (
             sampler if callable(sampler) else
             (lambda: sampler) if sampler else 0)
-
-        self.t0 = self.pause_until = 0 # is set on the first write
         super().__init__(*a, **kw)
+        # whether to use a process or a thread
+        self.open(npool=npool, mode=mode)
 
     def __repr__(self):
-        return '<{}({}) size={} n={} process={} value={} clip={}>'.format(
+        return '<{}({}) size={} n={} mode={} value={} clip={}>'.format(
             self.__class__.__name__, self.callback.__qualname__, self.size, len(self.items),
-            self.process, self.send_value, self.clip_value)
+            self.mode, self.send_value, self.clip_value)
+
+    def open(self, npool=None, mode=SERIAL, reopen=False):
+        if reopen:
+            self.close()
+        if not self.pool:
+            self.mode = mode or self.mode
+            self.npool = npool or self.npool
+            if self.mode != SERIAL:
+                Pool = ProcessPoolExecutor if self.mode == PROCESS else ThreadPoolExecutor
+                self.pool = Pool(max_workers=self.npool)
+
+    def close(self, wait=True):
+        if self.pool:
+            self.pool.shutdown(wait=wait)
+            self.pool = None
+
+    def __enter__(self):
+        self.open()
+
+    def __exit__(self, *a, **kw):
+        self.close()
 
     def __getstate__(self):
         return dict(self.__dict__, pool=None)
@@ -85,6 +101,8 @@ class BufferEmit(BuffReCycle):
             res = self.callback(value, self.t0)
             if self.on_done:
                 self.on_done(res)
+            if not self.send_value:
+                self.reuse(buff)
         else:
             # call the function in a thread/process
             fut = self.pool.submit(self.callback, value, self.t0)
@@ -95,8 +113,8 @@ class BufferEmit(BuffReCycle):
         # ready the next buffer
         self.next(leftover)
 
-    def __on_done(self, fut):
-        res = fut.result() if fut else None
+    def __on_done(self, fut=None):
+        res = fut.result() if isinstance(fut, Future) else fut
         if self.on_done:
             self.on_done(res)
 
