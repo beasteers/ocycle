@@ -1,13 +1,13 @@
 import io
 from collections import deque
-from .util import reset_io, truncate_io
+from ocycle.util import reset_io, truncate_io
 
 
-class ReCycle:
+class ObjectCycle:
     '''Infinitely generate and reuse a set of objects.
 
     Here's the basics of how it works:
-    >>> cycle = ReCycle(np.random.randn)
+    >>> cycle = ObCycle(np.random.randn)
     >>> assert cycle.current == 0.011874919700215744
     >>> assert cycle.next() == 0.9047307879536564
     >>> assert cycle.current == 0.9047307879536564
@@ -34,7 +34,7 @@ class ReCycle:
         self.items.append(item)
 
 
-class BuffReCycle(ReCycle):
+class BufferRecycle(ObjectCycle):
     '''Infinitely generate and reuse a set of io.BytesIO objects.'''
     def __init__(self, new=io.BytesIO, **kw):
         super().__init__(new=new, **kw)
@@ -49,35 +49,3 @@ class BuffReCycle(ReCycle):
 
     def reset(self):
         return reset_io(self.current)
-
-
-# class ListIO:
-#     def __init__(self):
-#         self.items = []
-#         self.i = 0
-#
-#     def __len__(self):
-#         return len(self.items)
-#
-#     def write(self, *items):
-#         i, l = self.i, len(self.items)
-#         if i < l - 1:
-#             self.items[i:l], items = items[:l - i], items[l - i:]
-#             i = l
-#         self.items.extend((None,) * max(i - l, 0) + items)
-#         self.i = i
-#
-#     def read(self, size=None):
-#         return self.items[self.i:self.i + size if self.i is not None else None]
-#
-#     def seek(self, i):
-#         self.i = i if i is not None else self.i
-#
-#     def tell(self):
-#         return self.i
-#
-#     def getvalue(self):
-#         return tuple(self.items)
-#
-#     def truncate(self, length=None):
-#         self.items = self.items[:length if length is not None else self.i]

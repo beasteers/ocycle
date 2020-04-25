@@ -1,13 +1,19 @@
 import time
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, Future
-from .base import BuffReCycle
-from .util import truncate_io
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from .base import BufferRecycle
+from .util import truncate_io, FakePool
 
 SERIAL = 'serial'
 THREAD = 'thread'
 PROCESS = 'process'
 
-class BufferEmit(BuffReCycle):
+Pools = {
+    SERIAL: FakePool,
+    THREAD: ThreadPoolExecutor,
+    PROCESS: ProcessPoolExecutor
+}
+
+class BufferEmit(BufferRecycle):
     '''Collect bytes in a buffer and call a function in a thread or process once it
     is of a certian size.
 
@@ -61,15 +67,13 @@ class BufferEmit(BuffReCycle):
             self.__class__.__name__, self.callback.__qualname__, self.size, len(self.items),
             self.mode, self.send_value, self.clip_value)
 
-    def open(self, npool=None, mode=SERIAL, reopen=False):
+    def open(self, npool=None, mode=None, reopen=False):
         if reopen:
             self.close()
         if not self.pool:
             self.mode = mode or self.mode
             self.npool = npool or self.npool
-            if self.mode != SERIAL:
-                Pool = ProcessPoolExecutor if self.mode == PROCESS else ThreadPoolExecutor
-                self.pool = Pool(max_workers=self.npool)
+            self.pool = Pools[self.mode](max_workers=self.npool)
 
     def close(self, wait=True):
         if self.pool:
@@ -97,24 +101,17 @@ class BufferEmit(BuffReCycle):
             # if we're sending the value, we can reuse the buffer right away
             self.reuse(buff)
 
-        if self.mode == SERIAL:
-            res = self.callback(value, self.t0)
-            if self.on_done:
-                self.on_done(res)
-            if not self.send_value:
-                self.reuse(buff)
-        else:
-            # call the function in a thread/process
-            fut = self.pool.submit(self.callback, value, self.t0)
-            fut.add_done_callback(self.__on_done)
-            if not self.send_value:
-                fut.add_done_callback(lambda fut: self.reuse(buff))
+        # call the function in a thread/process
+        fut = self.pool.submit(self.callback, value, self.t0)
+        fut.add_done_callback(self.__on_done)
+        if not self.send_value:
+            fut.add_done_callback(lambda fut: self.reuse(buff))
 
         # ready the next buffer
         self.next(leftover)
 
-    def __on_done(self, fut=None):
-        res = fut.result() if isinstance(fut, Future) else fut
+    def __on_done(self, fut):
+        res = fut.result()
         if self.on_done:
             self.on_done(res)
 
