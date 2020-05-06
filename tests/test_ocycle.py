@@ -1,5 +1,6 @@
 import io
 import time
+import weakref
 import ocycle
 
 
@@ -14,14 +15,10 @@ def process_(x, t0):
 
 class BufferEmitTester:
     def __init__(self, n_consume, check=None, process=process_, **kw):
-        self.b = ocycle.BufferEmit(process or self.process, size=n_consume, on_done=check, **kw)
+        self.b = ocycle.BufferEmit(process, size=n_consume, on_done=check, **kw)
 
     def run(self, n_emit, **kw):
         emit_msgs(self.b, n_emit, **kw)
-
-    def process(self, x, t0):
-        print('processing', x, t0, self.b)
-        return x
 
 def emit_msgs(b, n_emit, chars=ALPHABET):
     for c in chars:
@@ -76,3 +73,14 @@ def test_sampler():
         pass
     BufferEmitTester(N_CONSUME, check, sampler=1).run(N_EMIT)
     BufferEmitTester(N_CONSUME, check, sampler=lambda: random.uniform(0, 1.)).run(N_EMIT)
+
+def test_close():
+    buf = ocycle.BufferEmit(process_, size=N_CONSUME)
+    buf.close()
+    assert buf.pool is None
+
+def test_del():
+    buf = ocycle.BufferEmit(process_, size=N_CONSUME)
+    r = weakref.ref(buf)
+    buf.__del__()
+    assert r().pool is None

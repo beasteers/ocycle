@@ -86,6 +86,9 @@ class BufferEmit(BufferRecycle):
     def __exit__(self, *a, **kw):
         self.close()
 
+    def __del__(self):
+        self.close()
+
     def __getstate__(self):
         return dict(self.__dict__, pool=None)
 
