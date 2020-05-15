@@ -25,8 +25,7 @@ CONSUME_SIZE = 29
 # a data consumer
 def create_consumer(size):
     # this is called when the buffer reaches/exceeds size.
-    def callback(buff, t0):
-        value = buff.getvalue()
+    def callback(value, t0):
         assert len(value) >= CONSUME_SIZE
         print('Emitting:', t0, value)
 
@@ -72,8 +71,8 @@ You can pass e.g. `npool=10` to use a 10 thread/process worker pool.
 
 ### Value Type
 ##### Value Type
-By default, the callback will receive a `io.BytesIO` and timestamp object. If you pass `value=True`, it will
-pass `buff.getvalue()` (a `bytes` string) instead.
+By default, the callback will receive a `bytes` and timestamp object. If you pass `asbuffer=True`, it will
+pass `io.BytesIO` without calling `buff.getvalue()`.
 
 ##### Clipping
 By default, the callback will receive the entire buffer after the buffer has exceeded `size`. This is useful if you don't want to clip partial messages, but this also means that `len(buff) >= size`. If you pass `clip=True`, it will return buff in exact chunks of size `size`.

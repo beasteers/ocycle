@@ -1,6 +1,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-from .base import BufferRecycle
+from .base import BufferCycle
+from .baseio import NumpyIO, ListIO
 from .util import truncate_io, FakePool
 
 SERIAL = 'serial'
@@ -13,7 +14,7 @@ Pools = {
     PROCESS: ProcessPoolExecutor
 }
 
-class BufferEmit(BufferRecycle):
+class BufferEmit(BufferCycle):
     '''Collect bytes in a buffer and call a function in a thread or process once it
     is of a certian size.
 
@@ -31,7 +32,7 @@ class BufferEmit(BufferRecycle):
     Arguments:
         callback (callable): the function to call when the buffer fills up
         size (int): How big should the buffer be before calling?
-        value (bool): Whether to send the buffer value or the entire buffer
+        asbuffer (bool): Whether to send the buffer object or the buffer value.
         clip (bool): When a buffer grows greater than `size`, it will pass
             the entire buffer with len(value) >= size. If `clip` is set to True, it
             will truncate at the buffer at `size` and write the remainder to the next
@@ -47,12 +48,12 @@ class BufferEmit(BufferRecycle):
     '''
     pool = mode = None
     t0 = pause_until = 0 # is set on the first write
-    def __init__(self, callback, size, *a, value=False, clip=False, sampler=None,
+    def __init__(self, callback, size, *a, asbuffer=False, clip=False, sampler=None,
                  mode=SERIAL, npool=10, on_done=None, **kw):
         self.callback = callback
         self.on_done = on_done
         self.size = size
-        self.send_value = value
+        self.asbuffer = asbuffer
         self.clip_value = clip
         # optional, stochastic silence sampler
         self.sampler = (
@@ -63,9 +64,9 @@ class BufferEmit(BufferRecycle):
         self.open(npool=npool, mode=mode)
 
     def __repr__(self):
-        return '<{}({}) size={} n={} mode={} value={} clip={}>'.format(
+        return '<{}({}) size={} n={} mode={} asbuffer={} clip={}>'.format(
             self.__class__.__name__, self.callback.__qualname__, self.size, len(self.items),
-            self.mode, self.send_value, self.clip_value)
+            self.mode, self.asbuffer, self.clip_value)
 
     def open(self, npool=None, mode=None, reopen=False):
         if reopen:
@@ -99,7 +100,7 @@ class BufferEmit(BufferRecycle):
         if self.sampler: # don't store the leftover if we're going to have a jump in the data.
             leftover = None
 
-        if self.send_value:
+        if not self.asbuffer:
             value = buff.getvalue()
             # if we're sending the value, we can reuse the buffer right away
             self.reuse(buff)
@@ -107,7 +108,7 @@ class BufferEmit(BufferRecycle):
         # call the function in a thread/process
         fut = self.pool.submit(self.callback, value, self.t0)
         fut.add_done_callback(self.__on_done)
-        if not self.send_value:
+        if self.asbuffer:
             fut.add_done_callback(lambda fut: self.reuse(buff))
 
         # ready the next buffer
@@ -151,3 +152,10 @@ class BufferEmit(BufferRecycle):
     def truncate(self, size=None):
         '''Truncate the current buffer to the specified size. Returns the overhang.'''
         return truncate_io(self.current, size or self.size)
+
+
+class NumpyEmit(BufferEmit):
+    new = NumpyIO
+
+class ListEmit(BufferEmit):
+    new = ListIO

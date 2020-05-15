@@ -81,11 +81,12 @@ class NumpyIO(BaseIO):
                     'Buffer is {}, received {}.'.format(
                         self._buffer[1:], data.shape[1:]))
 
-        size = len(data)
-        self._size = max(self._i + size, self._size)
-        self._sizes.append(self._size)
-        self._input_sizes.append(size)
+        in_size = len(data)
+        size = max(self._i + in_size, self._size)
+        self._sizes.append(size)
+        self._input_sizes.append(in_size)
         self.readjust()
+        self._size = size
         self.buffer[self._slicenext(size)] = data
 
     def truncate(self, length=None):
@@ -102,6 +103,7 @@ class NumpyIO(BaseIO):
         if buflen < maxsize: # the buffer isn't big enough !
             buff, self._buffer = self._buffer, np.zeros(
                 (newlen,) + self._buffer.shape[1:])
+            print(buff.shape, self._buffer.shape, self._size)
             self.buffer[:size] = buff[:size]
 
         elif buflen > maxsize: # the buffer is bigger than you need to be

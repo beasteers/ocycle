@@ -14,9 +14,11 @@ class ObjectCycle:
     >>> assert cycle.last == 0.011874919700215744
     '''
     last = current = None
-    def __init__(self, new, n=1):
-        self.new = new
-        self.items = deque(new() for _ in range(n))
+    new = None
+    def __init__(self, new=None, n=1):
+        self.new = new or self.new
+        assert self.new is not None
+        self.items = deque(self.new() for _ in range(n))
         self.next()
 
     def __repr__(self):
@@ -34,11 +36,9 @@ class ObjectCycle:
         self.items.append(item)
 
 
-class BufferRecycle(ObjectCycle):
+class BufferCycle(ObjectCycle):
     '''Infinitely generate and reuse a set of io.BytesIO objects.'''
-    def __init__(self, new=io.BytesIO, **kw):
-        super().__init__(new=new, **kw)
-
+    new = io.BytesIO
     def next(self, content=None):
         super().next()
         if content:
